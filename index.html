@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WorkProof: consensus-graded work acceptance on GenLayer</title>
+<meta name="description" content="Register a piece of work and its acceptance criteria. GenLayer validators fetch the evidence, grade it, and store the verdict only when they agree.">
+<style>
+  :root{ --ink:#131022; --muted:#5b5670; --brand:#4f2bd8; --brand2:#6d4aff; --bg:#f7f5fd; --card:#ffffff; --line:#e4def5; --ok:#0d7a43; --warn:#9a6a00; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--ink); }
+  .wrap{ max-width:880px; margin:0 auto; padding:24px 16px 64px; }
+  header{ display:flex; align-items:center; gap:14px; padding:18px 0 8px; flex-wrap:wrap; }
+  .logo{ width:52px; height:52px; border-radius:14px; background:linear-gradient(135deg,var(--brand),var(--brand2)); display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
+  .logo svg{ width:30px; height:30px; }
+  h1{ font-size:30px; margin:0; letter-spacing:-0.5px; }
+  .tagline{ color:var(--muted); margin:2px 0 0; font-size:15px; }
+  .addr{ font-size:12.5px; color:var(--muted); word-break:break-all; }
+  .addr a{ color:var(--brand); text-decoration:none; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; margin-top:18px; }
+  .card h2{ margin:0 0 6px; font-size:19px; }
+  .card p.sub{ margin:0 0 14px; color:var(--muted); font-size:14px; }
+  label{ display:block; font-size:13px; font-weight:600; margin:12px 0 5px; }
+  input, textarea{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font:inherit; font-size:14.5px; background:#fff; }
+  textarea{ min-height:84px; resize:vertical; }
+  button{ font:inherit; font-weight:600; border:0; border-radius:10px; padding:11px 18px; cursor:pointer; background:var(--brand); color:#fff; }
+  button.secondary{ background:#ece8fb; color:var(--brand); }
+  button:disabled{ opacity:.55; cursor:wait; }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .stat{ font-size:14px; color:var(--muted); }
+  .stat b{ color:var(--ink); font-size:20px; }
+  .task{ border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-top:12px; }
+  .task h3{ margin:0 0 4px; font-size:16px; }
+  .task .meta{ font-size:13px; color:var(--muted); word-break:break-all; }
+  .badge{ display:inline-block; font-size:12px; font-weight:700; padding:2px 9px; border-radius:99px; background:#ece8fb; color:var(--brand); }
+  .badge.done{ background:#e2f4ea; color:var(--ok); }
+  .verdict{ margin-top:8px; font-size:14px; background:#faf9ff; border:1px solid var(--line); border-radius:10px; padding:10px 12px; white-space:pre-wrap; word-break:break-word; }
+  .msg{ margin-top:12px; font-size:14px; }
+  .msg.err{ color:#b3261e; }
+  .msg.ok{ color:var(--ok); }
+  footer{ margin-top:34px; font-size:13px; color:var(--muted); line-height:1.6; }
+  footer a{ color:var(--brand); text-decoration:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.6-3 8.1-7 10-4-1.9-7-5.4-7-10V6l7-3z" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.8 12.2l2.2 2.2 4.2-4.6" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div>
+      <h1>WorkProof</h1>
+      <p class="tagline">Work acceptance checked by validator consensus, not by one reviewer or a screenshot.</p>
+    </div>
+  </header>
+  <p class="addr">Intelligent Contract on GenLayer Studionet:
+    <a href="https://explorer-studio.genlayer.com/address/0xD974a24a033714a64987539EF13986f63E51d426" target="_blank" rel="noopener">0xD974a24a033714a64987539EF13986f63E51d426</a>
+  </p>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;">
+      <div class="stat">Tasks registered on chain: <b id="totalTasks">...</b></div>
+      <div class="row">
+        <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+        <button id="connectBtn" type="button">Connect wallet</button>
+      </div>
+    </div>
+    <p class="msg" id="walletMsg"></p>
+  </div>
+
+  <div class="card">
+    <h2>Register a piece of work</h2>
+    <p class="sub">Write the acceptance criteria in plain language and link the public evidence. Anyone can register a task. Grading happens when someone resolves it.</p>
+    <form id="createForm">
+      <label for="fTitle">Title</label>
+      <input id="fTitle" required minlength="4" maxlength="200" placeholder="Example: Landing page for the spring campaign">
+      <label for="fCriteria">Acceptance criteria</label>
+      <textarea id="fCriteria" required minlength="20" maxlength="4000" placeholder="Example: The page loads on mobile without horizontal scrolling, shows the product price, and the order button opens the checkout."></textarea>
+      <label for="fUrl">Evidence URL</label>
+      <input id="fUrl" required type="url" placeholder="https://...">
+      <label for="fPass">Pass score (1 to 100)</label>
+      <input id="fPass" required type="number" min="1" max="100" value="70">
+      <div class="row" style="margin-top:16px;">
+        <button id="createBtn" type="submit">Create task</button>
+      </div>
+      <p class="msg" id="createMsg"></p>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Tasks</h2>
+    <p class="sub">Resolving a task fetches the evidence page and asks GenLayer validators to grade it. The verdict is stored only after validators agree: the verdict must match exactly, the score must be within 15 points, and the criteria met count within 1.</p>
+    <div id="taskList"><p class="stat">Loading tasks...</p></div>
+  </div>
+
+  <footer>
+    WorkProof is a reusable acceptance primitive for bounties, contribution programs, and agent marketplaces: the party offering work and the party doing it can both point at the same on-chain verdict instead of arguing over screenshots.<br>
+    Network: GenLayer Studionet (testnet, chain 61999). Contract source and tests:
+    <a href="https://github.com/0xsters/genlayer-workproof-verifier" target="_blank" rel="noopener">github.com/0xsters/genlayer-workproof-verifier</a>
+  </footer>
+</div>
+
+<script type="module">
+import { createClient, chains } from 'https://cdn.jsdelivr.net/npm/genlayer-js@1.1.8/+esm';
+
+const CONTRACT = '0xD974a24a033714a64987539EF13986f63E51d426';
+const readClient = createClient({ chain: chains.studionet });
+let account = null;
+
+const $ = (id) => document.getElementById(id);
+const walletMsg = $('walletMsg');
+
+async function loadTasks() {
+  const list = $('taskList');
+  try {
+    const total = Number(await readClient.readContract({ address: CONTRACT, functionName: 'total_tasks', args: [] }));
+    $('totalTasks').textContent = String(total);
+    if (total === 0) { list.innerHTML = '<p class="stat">No tasks yet. Register the first one above.</p>'; return; }
+    list.innerHTML = '';
+    for (let i = total - 1; i >= 0; i--) {
+      const raw = await readClient.readContract({ address: CONTRACT, functionName: 'get_task', args: [i] });
+      let t; try { t = JSON.parse(raw); } catch { t = { title: 'Task ' + i, status: 'unknown' }; }
+      const div = document.createElement('div'); div.className = 'task';
+      const resolved = t.status === 'resolved';
+      let html = '<h3>#' + i + ' ' + escapeHtml(t.title || '') + ' <span class="badge' + (resolved ? ' done' : '') + '">' + escapeHtml(t.status || '') + '</span></h3>';
+      html += '<div class="meta">Pass score: ' + escapeHtml(String(t.pass_score ?? '')) + ' &middot; Evidence: <a href="' + escapeAttr(t.evidence_url || '#') + '" target="_blank" rel="noopener">' + escapeHtml(t.evidence_url || '') + '</a></div>';
+      html += '<div class="meta">Criteria: ' + escapeHtml(t.criteria || '') + '</div>';
+      if (resolved && t.verdict) {
+        const v = t.verdict;
+        html += '<div class="verdict">Verdict: <b>' + escapeHtml(v.verdict || '') + '</b> &middot; Score: <b>' + escapeHtml(String(v.score ?? '')) + '</b> &middot; Criteria met: ' + escapeHtml(String(v.criteria_met ?? '')) + ' of ' + escapeHtml(String(v.criteria_total ?? '')) + '\n' + escapeHtml(v.summary || '') + '</div>';
+      } else {
+        html += '<div class="row" style="margin-top:10px;"><button type="button" data-resolve="' + i + '">Resolve this task</button></div>';
+      }
+      div.innerHTML = html;
+      list.appendChild(div);
+    }
+    list.querySelectorAll('[data-resolve]').forEach((b) => b.addEventListener('click', () => resolveTask(Number(b.dataset.resolve), b)));
+  } catch (e) {
+    list.innerHTML = '<p class="msg err">Could not load tasks: ' + escapeHtml(e.message || String(e)) + '</p>';
+  }
+}
+
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escapeAttr(s) { return escapeHtml(s); }
+
+async function ensureWallet() {
+  if (!window.ethereum) throw new Error('No wallet found in this browser. Open this page in a browser with MetaMask or a similar wallet.');
+  const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  account = accounts[0];
+  try {
+    await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0xf22f' }] });
+  } catch (e) {
+    if (e.code === 4902) {
+      await window.ethereum.request({ method: 'wallet_addEthereumChain', params: [{ chainId: '0xf22f', chainName: 'GenLayer Studionet', rpcUrls: ['https://studio.genlayer.com/api'], nativeCurrency: { name: 'GEN', symbol: 'GEN', decimals: 18 }, blockExplorerUrls: ['https://explorer-studio.genlayer.com'] }] });
+    } else if (e.code !== 4001) { /* some wallets already on chain */ }
+  }
+  $('connectBtn').textContent = account.slice(0, 6) + '...' + account.slice(-4);
+  walletMsg.textContent = 'Wallet connected on GenLayer Studionet.';
+  walletMsg.className = 'msg ok';
+  return account;
+}
+
+function writeClient() { return createClient({ chain: chains.studionet, account }); }
+
+async function waitFinal(hash) {
+  return await readClient.waitForTransactionReceipt({ hash, status: 'FINALIZED', interval: 4000, retries: 90 });
+}
+
+$('connectBtn').addEventListener('click', async () => {
+  try { await ensureWallet(); } catch (e) { walletMsg.textContent = e.message; walletMsg.className = 'msg err'; }
+});
+
+$('createForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const msg = $('createMsg'); const btn = $('createBtn');
+  try {
+    if (!account) await ensureWallet();
+    btn.disabled = true; msg.textContent = 'Sending the transaction. Confirm it in your wallet.'; msg.className = 'msg';
+    const hash = await writeClient().writeContract({
+      address: CONTRACT, functionName: 'create_task',
+      args: [$('fTitle').value.trim(), $('fCriteria').value.trim(), $('fUrl').value.trim(), Number($('fPass').value)],
+      value: 0n,
+    });
+    msg.textContent = 'Transaction sent: ' + hash + ' Waiting for finalization, this can take a minute.';
+    await waitFinal(hash);
+    msg.textContent = 'Task registered. Transaction: ' + hash; msg.className = 'msg ok';
+    ev.target.reset(); $('fPass').value = 70;
+    await loadTasks();
+  } catch (e) { msg.textContent = 'Failed: ' + (e.message || String(e)); msg.className = 'msg err'; }
+  finally { btn.disabled = false; }
+});
+
+async function resolveTask(id, btn) {
+  const list = $('taskList');
+  try {
+    if (!account) await ensureWallet();
+    btn.disabled = true; btn.textContent = 'Resolving, validators are grading...';
+    const hash = await writeClient().writeContract({ address: CONTRACT, functionName: 'resolve_task', args: [id], value: 0n });
+    await waitFinal(hash);
+    await loadTasks();
+  } catch (e) {
+    const p = document.createElement('p'); p.className = 'msg err'; p.textContent = 'Resolve failed: ' + (e.message || String(e)); list.prepend(p);
+    btn.disabled = false; btn.textContent = 'Resolve this task';
+  }
+}
+
+$('refreshBtn').addEventListener('click', loadTasks);
+loadTasks();
+</script>
+</body>
+</html>
